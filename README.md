@@ -88,3 +88,4 @@ Fetch a single question by MongoDB ObjectId (hex string).
 - Scanned PDFs require OCR — that will be a separate service
 - The parser handles the standard JAMB MCQ format
 - Explanations field is null by default — can be filled later via AI
+# educore-past-question-parser
