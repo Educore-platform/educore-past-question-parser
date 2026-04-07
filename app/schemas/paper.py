@@ -15,13 +15,11 @@ class ExamPaperOut(BaseModel):
     exam_type_id: Optional[str] = None
     exam_type: str = Field(..., alias="examType")
     paper_code: Optional[str] = Field(None, description="Subject-scoped upload sequence")
-    year: Optional[str] = None
-    years_detected: List[str]
+    year: Optional[int] = Field(None, description="Primary year (first entry in years_detected)")
+    years_detected: List[int]
     total_questions: int
     exam_file_id: Optional[str] = Field(None, description="Linked ExamFile document id")
-    source_original_filename: Optional[str] = None
-    stored_filename: Optional[str] = None
-    relative_path: Optional[str] = None
+    filename: Optional[str] = Field(None, description="Original PDF filename at upload time")
     size_bytes: Optional[int] = None
     total_pages: int = 0
     created_at: datetime
@@ -50,6 +48,7 @@ def paper_to_out(
     exam_code = ""
     if doc.exam_type_id and exam_types is not None:
         exam_code = exam_types.get(doc.exam_type_id) or ""
+    primary_year = doc.years_detected[0] if doc.years_detected else None
     return ExamPaperOut(
         id=str(doc.id),
         subject_id=str(doc.subject_id) if doc.subject_id else None,
@@ -57,13 +56,11 @@ def paper_to_out(
         exam_type_id=str(doc.exam_type_id) if doc.exam_type_id else None,
         examType=exam_code,
         paper_code=doc.paper_code,
-        year=doc.year,
+        year=primary_year,
         years_detected=doc.years_detected,
         total_questions=doc.total_questions,
         exam_file_id=str(exam_file.id) if exam_file else None,
-        source_original_filename=exam_file.source_original_filename if exam_file else None,
-        stored_filename=exam_file.stored_filename if exam_file else None,
-        relative_path=exam_file.relative_path if exam_file else None,
+        filename=exam_file.filename if exam_file else None,
         size_bytes=exam_file.size_bytes if exam_file else None,
         total_pages=exam_file.total_pages if exam_file else 0,
         created_at=doc.created_at,

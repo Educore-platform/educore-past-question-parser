@@ -11,7 +11,7 @@ from typing import Optional
 
 from beanie import Document, PydanticObjectId
 from pydantic import Field, field_validator
-from pymongo import ASCENDING, DESCENDING, IndexModel
+from pymongo import ASCENDING, DESCENDING, TEXT, IndexModel
 
 
 def _utcnow() -> datetime:
@@ -24,6 +24,10 @@ class QuestionDocument(Document):
 
     Provenance: each row links to one ``ExamPaperDocument`` via ``paper_id``
     and to one ``SubjectDocument`` via ``subject_id``.
+
+    ``subject_id`` and ``exam_type_id`` are intentionally denormalised from
+    the parent ``ExamPaperDocument`` to allow efficient single-collection
+    filtering without a join. Keep them in sync when subjects are reassigned.
     """
 
     paper_id: Optional[PydanticObjectId] = Field(
@@ -32,15 +36,15 @@ class QuestionDocument(Document):
     )
     subject_id: Optional[PydanticObjectId] = Field(
         None,
-        description="Reference to SubjectDocument._id",
+        description="Reference to SubjectDocument._id (denormalised for query performance)",
     )
     exam_type_id: Optional[PydanticObjectId] = Field(
         None,
-        description="Reference to ExamTypeDocument._id",
+        description="Reference to ExamTypeDocument._id (denormalised for query performance)",
     )
-    year: Optional[str] = Field(
+    year: Optional[int] = Field(
         None,
-        description="Exam year as printed in the PDF",
+        description="Exam year as an integer (e.g. 2019)",
     )
     question_number: int = Field(..., ge=1, description="Number within that paper/section")
     question: str = Field(..., description="Question stem / prompt text")
@@ -89,6 +93,8 @@ class QuestionDocument(Document):
                 name="idx_subject_year",
             ),
             IndexModel([("created_at", DESCENDING)], name="idx_created_desc"),
+            IndexModel([("is_flagged", ASCENDING)], name="idx_is_flagged"),
+            IndexModel([("question", TEXT)], name="idx_question_text"),
         ]
 
     @field_validator("options", mode="before")

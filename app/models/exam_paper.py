@@ -5,6 +5,9 @@ Stored in collection `exam_papers`. One document per uploaded PDF.
 Logical import for one past-paper PDF: subject/year context and question
 counts. File bytes and storage metadata live in ``exam_files`` (see
 ``ExamFileDocument``) linked by ``paper_id``.
+
+``year`` is not stored on this model — derive the primary year from
+``years_detected[0]`` in the API layer.
 """
 
 from datetime import datetime, timezone
@@ -26,6 +29,10 @@ class ExamPaperDocument(Document):
     ``paper_code`` is a subject-scoped sequence string ("001", "002", …)
     assigned at import time so different uploads of the same subject can be
     distinguished in the UI.
+
+    ``exam_type_id`` is intentionally denormalised from
+    ``subjects.exam_type_id`` to avoid a two-hop lookup on every question
+    filter. Keep it in sync when subjects are reassigned.
     """
 
     subject_id: Optional[PydanticObjectId] = Field(
@@ -38,13 +45,9 @@ class ExamPaperDocument(Document):
     )
     exam_type_id: Optional[PydanticObjectId] = Field(
         None,
-        description="Reference to ExamTypeDocument._id",
+        description="Reference to ExamTypeDocument._id (denormalised from subjects)",
     )
-    year: Optional[str] = Field(
-        None,
-        description="Primary year detected in the paper",
-    )
-    years_detected: List[str] = Field(
+    years_detected: List[int] = Field(
         default_factory=list,
         description="All distinct years found across questions in this paper",
     )
@@ -59,14 +62,11 @@ class ExamPaperDocument(Document):
         name = "exam_papers"
         indexes = [
             IndexModel(
-                [("subject_id", ASCENDING), ("year", ASCENDING)],
-                name="idx_subject_year",
-            ),
-            IndexModel(
                 [("exam_type_id", ASCENDING), ("subject_id", ASCENDING)],
                 name="idx_examtype_subject",
             ),
             IndexModel([("exam_type_id", ASCENDING)], name="idx_exam_type_id"),
             IndexModel([("subject_id", ASCENDING)], name="idx_subject_id"),
+            IndexModel([("years_detected", ASCENDING)], name="idx_years_detected"),
             IndexModel([("created_at", DESCENDING)], name="idx_created_desc"),
         ]

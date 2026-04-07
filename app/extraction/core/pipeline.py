@@ -1,7 +1,8 @@
 """
 Pipeline orchestrator.
 
-Exposes a single public entry-point: ``run_pipeline(pdf_path, subject_override=None)``.
+Exposes a single public entry-point:
+``run_pipeline(pdf_path, subject_override=None, exam_type_override=None)``.
 
 Execution order
 ---------------
@@ -95,6 +96,7 @@ def run_pipeline(
     pdf_path: Path,
     *,
     subject_override: str | None = None,
+    exam_type_override: str | None = None,
 ) -> PipelineResult:
     """
     Extract structured questions from a JAMB-style PDF.
@@ -106,6 +108,9 @@ def run_pipeline(
     subject_override:
         When provided (e.g. passed via an API query param), skips all subject
         detection strategies and uses this value directly.
+    exam_type_override:
+        When provided (e.g. via API), skips automatic exam-type detection and
+        sets ``ctx.exam_type`` to this value for every extracted question.
 
     Returns
     -------
@@ -131,8 +136,12 @@ def run_pipeline(
             "Subject resolved to %r by %s", ctx.subject, subject_result.resolved_by
         )
 
-        # ── 1b. Detect exam type from first page ─────────────────────────────
-        if len(doc) > 0 and "JOINT UNIVERSITIES PRELIMINARY EXAMINATIONS BOARD" in doc[0].get_text().upper():
+        # ── 1b. Exam type: API override, else first-page heuristics ───────────
+        override = (exam_type_override or "").strip()
+        if override:
+            ctx.exam_type = override
+            logger.debug("Exam type from override: %s", ctx.exam_type)
+        elif len(doc) > 0 and "JOINT UNIVERSITIES PRELIMINARY EXAMINATIONS BOARD" in doc[0].get_text().upper():
             ctx.exam_type = "JUPEB"
             logger.debug("Exam type detected: JUPEB")
 

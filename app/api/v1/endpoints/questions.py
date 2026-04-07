@@ -47,7 +47,7 @@ _INVALID_ID_MSG = "Invalid question id"
     ),
 )
 async def list_questions(
-    year: Annotated[Optional[str], Query(description="Exact year string, e.g. 2010")] = None,
+    year: Annotated[Optional[int], Query(description="Exact year as an integer, e.g. 2010")] = None,
     subject: Annotated[Optional[str], Query()] = None,
     exam_type: Annotated[Optional[str], Query(alias="examType")] = None,
     question_number: Annotated[
@@ -60,7 +60,7 @@ async def list_questions(
         Optional[str], Query(description="Subject id to filter by subject")
     ] = None,
     search: Annotated[
-        Optional[str], Query(description="Case-insensitive substring match on question stem")
+        Optional[str], Query(description="Full-text search on question stem")
     ] = None,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=_MAX_LIMIT)] = 50,
@@ -112,7 +112,7 @@ async def list_questions(
     ),
 )
 async def list_questions_summary(
-    year: Annotated[Optional[str], Query(description="Exact year string, e.g. 2010")] = None,
+    year: Annotated[Optional[int], Query(description="Exact year as an integer, e.g. 2010")] = None,
     subject: Annotated[Optional[str], Query()] = None,
     exam_type: Annotated[Optional[str], Query(alias="examType")] = None,
     question_number: Annotated[
@@ -125,7 +125,7 @@ async def list_questions_summary(
         Optional[str], Query(description="Subject id to filter by subject")
     ] = None,
     search: Annotated[
-        Optional[str], Query(description="Case-insensitive substring match on question stem")
+        Optional[str], Query(description="Full-text search on question stem")
     ] = None,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=_MAX_LIMIT)] = 50,
@@ -207,7 +207,7 @@ async def get_filter_values(
         except (ValueError, TypeError, InvalidId) as e:
             raise HTTPException(status_code=400, detail="Invalid paper_id") from e
         paper_doc = await ExamPaperDocument.get(oid)
-        years: List[str] = sorted(
+        years: List[int] = sorted(
             [v for v in (paper_doc.years_detected if paper_doc else []) if v],
             reverse=True,
         )
@@ -423,6 +423,16 @@ async def delete_question(
     if doc is None:
         raise HTTPException(status_code=404, detail="Question not found")
 
+    paper_id = doc.paper_id
     await doc.delete()
+
+    if paper_id is not None:
+        paper = await ExamPaperDocument.get(paper_id)
+        if paper is not None and paper.total_questions > 0:
+            from datetime import datetime, timezone
+            paper.total_questions = max(0, paper.total_questions - 1)
+            paper.updated_at = datetime.now(timezone.utc)
+            await paper.save()
+
     await cache.delete(f"question:{question_id}", "question:stats")
     return api_success({"message": "Question deleted successfully"})

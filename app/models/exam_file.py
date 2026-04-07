@@ -3,7 +3,11 @@ MongoDB document model for uploaded exam PDF files.
 
 Stored in collection ``exam_files``. One row per source file; ``paper_id``
 points at the logical ``ExamPaperDocument`` that owns extracted questions.
-File bytes live on disk; this document holds identity, hash, and paths.
+
+The uploaded file is removed from disk after the extraction pipeline
+completes. This document retains only the identity metadata that has
+durable value: the original filename, the SHA-256 hash (idempotency key),
+the byte size, and the page count.
 """
 
 from datetime import datetime, timezone
@@ -20,7 +24,7 @@ def _utcnow() -> datetime:
 
 class ExamFileDocument(Document):
     """
-    Metadata for one stored PDF tied to an exam paper import.
+    Metadata for one uploaded PDF tied to an exam paper import.
 
     ``file_hash`` (SHA-256 hex) is unique and used for idempotency lookups.
     """
@@ -29,17 +33,9 @@ class ExamFileDocument(Document):
         ...,
         description="Reference to ExamPaperDocument._id",
     )
-    source_original_filename: str = Field(
+    filename: str = Field(
         ...,
         description="Client-provided filename at upload time",
-    )
-    stored_filename: str = Field(
-        ...,
-        description="Unique filename on disk under the upload directory",
-    )
-    relative_path: str = Field(
-        ...,
-        description="Path relative to project root (POSIX-style)",
     )
     file_hash: str = Field(
         ...,
@@ -54,10 +50,6 @@ class ExamFileDocument(Document):
         0,
         ge=0,
         description="Page count from the parsed PDF",
-    )
-    content_type: str = Field(
-        "application/pdf",
-        description="MIME type of the stored object",
     )
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: Optional[datetime] = Field(None)

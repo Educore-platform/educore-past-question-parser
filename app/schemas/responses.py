@@ -37,7 +37,7 @@ class ExtractQuestionsUploadSummary(BaseModel):
     filename: str
     stored_filename: Optional[str] = None
     total_pages: int
-    years_detected: List[str]
+    years_detected: List[int]
     total_questions: int = Field(
         ...,
         description="Number of questions parsed from the PDF this run",
@@ -93,7 +93,7 @@ class DistinctValuesResponse(BaseModel):
         ...,
         description="Distinct exam type codes from the exam_types registry",
     )
-    years: List[str]
+    years: List[int]
 
 
 class QuestionStatsResponse(BaseModel):
@@ -115,21 +115,13 @@ class ImportGroupInfo(BaseModel):
     paper_code: Optional[str] = None
     subject: str
     exam_type: str = Field(..., alias="examType")
-    year: Optional[str] = None
-    years_detected: List[str] = Field(default_factory=list)
+    year: Optional[int] = None
+    years_detected: List[int] = Field(default_factory=list)
     total_questions: int
     total_pages: int = 0
-    source_original_filename: Optional[str] = Field(
+    filename: Optional[str] = Field(
         None,
         description="Original PDF filename for this upload",
-    )
-    stored_filename: Optional[str] = Field(
-        None,
-        description="Unique filename on disk under the upload directory",
-    )
-    relative_path: Optional[str] = Field(
-        None,
-        description="Path to the PDF relative to project root",
     )
     size_bytes: Optional[int] = Field(None, description="PDF file size in bytes")
     created_at: str

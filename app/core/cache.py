@@ -67,7 +67,7 @@ async def get_json(key: str) -> Optional[Any]:
 
 
 async def set_json(key: str, value: Any, ttl: Optional[int] = None) -> None:
-    """Serialise *value* to JSON and store it at *key* with an optional TTL (seconds)."""
+    """Serialize *value* to JSON and store it at *key* with an optional TTL (seconds)."""
     r = _get()
     if r is None:
         return

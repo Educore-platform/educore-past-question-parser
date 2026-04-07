@@ -50,6 +50,7 @@ def _validate_multi_pdf_upload(chunks: list[tuple[Optional[str], bytes]]) -> int
 async def _process_saved_pdf(
     meta: dict,
     subject: Optional[str],
+    exam_type: Optional[str],
 ) -> ExtractQuestionsUploadSummary:
     path = Path(meta["absolute_path"])
 
@@ -69,19 +70,22 @@ async def _process_saved_pdf(
             persisted_count=0,
             paper_id=existing.paper_id,
             paper_code=existing.paper_code,
-            subject_name=existing.source_original_filename,
+            subject_name=existing.filename,
         )
 
-    result = await asyncio.to_thread(run_pipeline, path, subject_override=subject)
-    years_found = sorted({q["year"] for q in result.questions if q["year"]})
+    result = await asyncio.to_thread(
+        run_pipeline,
+        path,
+        subject_override=subject,
+        exam_type_override=exam_type,
+    )
+    years_found = sorted({int(q["year"]) for q in result.questions if q["year"]})
 
     persisted, paper_id_str, paper_code_val = await persist_parsed_questions(
         result.questions,
-        source_original_filename=meta["original_filename"],
+        filename=meta["original_filename"],
         file_hash=file_hash,
         source_total_pages=result.total_pages,
-        stored_filename=meta["stored_filename"],
-        relative_path=meta["relative_path"],
         size_bytes=meta["size_bytes"],
     )
     file_processed.send("extract_questions", path=str(path))
@@ -130,6 +134,11 @@ async def extract_questions(
         default=None,
         description="Override automatic subject detection (e.g. 'Biology', 'Mathematics') for every file.",
     ),
+    exam_type: Optional[str] = Query(
+        default=None,
+        alias="examType",
+        description="Override automatic exam type detection (e.g. 'JAMB', 'WAEC') for every file.",
+    ),
 ):
     chunks = await asyncio.gather(*(_read_upload(f) for f in files))
     total_size_bytes = _validate_multi_pdf_upload(chunks)
@@ -147,11 +156,7 @@ async def extract_questions(
 
     metas = await asyncio.gather(*[_save_one(c) for c in chunks])
 
-    # Process sequentially so paper_code values (001, 002, …) remain ordered.
-    summaries = []
-    for m in metas:
-        summary = await _process_saved_pdf(m, subject)
-        summaries.append(summary)
+    summaries = await asyncio.gather(*(_process_saved_pdf(m, subject, exam_type) for m in metas))
 
     return api_success(
         ExtractQuestionsMultiUploadSummary(

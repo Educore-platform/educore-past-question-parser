@@ -73,10 +73,6 @@ async def list_subjects(
     description="Register a new subject. `name` must be unique. Optionally link to an exam type by id.",
 )
 async def create_subject(body: SubjectCreate) -> ApiResponse[SubjectOut]:
-    existing = await SubjectDocument.find_one(SubjectDocument.name == body.name)
-    if existing:
-        raise HTTPException(status_code=409, detail=f"Subject '{body.name}' already exists")
-
     exam_type_oid: Optional[PydanticObjectId] = None
     if body.exam_type_id:
         try:
@@ -86,6 +82,16 @@ async def create_subject(body: SubjectCreate) -> ApiResponse[SubjectOut]:
         et = await ExamTypeDocument.get(exam_type_oid)
         if et is None:
             raise HTTPException(status_code=404, detail="Exam type not found")
+
+    existing = await SubjectDocument.find_one({
+        "name": body.name,
+        "exam_type_id": exam_type_oid,
+    })
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Subject '{body.name}' already exists for this exam type",
+        )
 
     doc = SubjectDocument(
         name=body.name,
@@ -140,9 +146,21 @@ async def update_subject(
         raise HTTPException(status_code=404, detail=_SUBJECT_NOT_FOUND_MSG)
 
     if body.name is not None and body.name != doc.name:
-        conflict = await SubjectDocument.find_one(SubjectDocument.name == body.name)
-        if conflict:
-            raise HTTPException(status_code=409, detail=f"Subject '{body.name}' already exists")
+        new_et_oid = doc.exam_type_id
+        if body.exam_type_id is not None:
+            try:
+                new_et_oid = PydanticObjectId(body.exam_type_id)
+            except (ValueError, TypeError, InvalidId) as e:
+                raise HTTPException(status_code=400, detail="Invalid exam_type_id") from e
+        conflict = await SubjectDocument.find_one({
+            "name": body.name,
+            "exam_type_id": new_et_oid,
+        })
+        if conflict and conflict.id != doc.id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Subject '{body.name}' already exists for this exam type",
+            )
         doc.name = body.name
 
     if body.aliases is not None:

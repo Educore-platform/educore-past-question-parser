@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from beanie import PydanticObjectId
-from bson.errors import InvalidId
 
 from app.core import cache
 from app.models.exam_file import ExamFileDocument
@@ -39,7 +38,7 @@ async def get_or_create_exam_type(raw_code: str) -> ExamTypeDocument:
         {"code": {"$regex": f"^{re.escape(code)}$", "$options": "i"}}
     )
     if doc is None:
-        doc = ExamTypeDocument(code=code)
+        doc = ExamTypeDocument(code=code, name=code)
         await doc.insert()
 
     await cache.set_json(cache_key, doc.model_dump(mode="json"), ttl=3600)
@@ -77,7 +76,12 @@ def _normalize_subject_name(name: str) -> str:
 
 
 async def resolve_subject_id_by_name(name: str) -> Optional[PydanticObjectId]:
-    """Return Subject id for a canonical name, or None if not in the registry."""
+    """Return Subject id for a canonical name, or None if not in the registry.
+
+    When multiple subjects share the same name (different exam types) the
+    first match is returned. Callers that also filter by exam type will
+    naturally scope to the correct document via the exam_type filter.
+    """
     canonical = _normalize_subject_name(name)
     cache_key = f"subject:name:{canonical}"
 
@@ -101,12 +105,12 @@ async def get_or_create_subject(
     exam_type_doc: ExamTypeDocument,
 ) -> SubjectDocument:
     """
-    Return the existing SubjectDocument for ``subject_name`` (case-insensitive),
-    creating one if it does not yet exist. Links ``exam_type_id`` and updates
-    aliases when new information is available.
+    Return the existing SubjectDocument for ``subject_name`` scoped to
+    ``exam_type_doc`` (case-insensitive), creating one if it does not yet
+    exist. The unique key is ``(name, exam_type_id)``.
     """
     canonical = _normalize_subject_name(subject_name)
-    cache_key = f"subject:name:{canonical}"
+    cache_key = f"subject:name:{canonical}:{exam_type_doc.id}"
 
     cached = await cache.get_json(cache_key)
     if cached is not None:
@@ -116,9 +120,10 @@ async def get_or_create_subject(
         except Exception:
             pass
 
-    doc = await SubjectDocument.find_one(
-        {"name": {"$regex": f"^{re.escape(canonical)}$", "$options": "i"}}
-    )
+    doc = await SubjectDocument.find_one({
+        "name": {"$regex": f"^{re.escape(canonical)}$", "$options": "i"},
+        "exam_type_id": exam_type_doc.id,
+    })
     if doc is None:
         doc = SubjectDocument(
             name=canonical,
@@ -128,15 +133,9 @@ async def get_or_create_subject(
         await doc.insert()
         await cache.set_json(cache_key, doc.model_dump(mode="json"), ttl=3600)
     else:
-        changed = False
-        if doc.exam_type_id is None and exam_type_doc.id:
-            doc.exam_type_id = exam_type_doc.id
-            changed = True
         raw = (subject_name or "").strip()
         if raw and raw != canonical and raw not in doc.aliases:
             doc.aliases.append(raw)
-            changed = True
-        if changed:
             doc.updated_at = datetime.now(timezone.utc)
             await doc.save()
         await cache.set_json(cache_key, doc.model_dump(mode="json"), ttl=3600)
@@ -210,11 +209,11 @@ async def map_paper_ids_to_exam_files(
 class ExistingImportSummary:
     """Upload metadata recovered from ``exam_files`` / ``exam_papers`` for idempotent replays."""
 
-    source_original_filename: str
+    filename: str
     paper_id: str
     paper_code: Optional[str]
     total_questions: int
-    years_detected: List[str]
+    years_detected: List[int]
     total_pages: int
 
 
@@ -234,7 +233,7 @@ async def find_import_summary_by_file_hash(file_hash: str) -> Optional[ExistingI
         return None
 
     summary = ExistingImportSummary(
-        source_original_filename=ef.source_original_filename,
+        filename=ef.filename,
         paper_id=str(paper.id),
         paper_code=paper.paper_code,
         total_questions=paper.total_questions,
@@ -253,20 +252,18 @@ async def find_import_summary_by_file_hash(file_hash: str) -> Optional[ExistingI
 async def persist_parsed_questions(
     questions: List[dict],
     *,
-    source_original_filename: str,
+    filename: str,
     file_hash: str,
     source_total_pages: int,
-    stored_filename: str,
-    relative_path: str,
     size_bytes: int,
     paper_code_override: Optional[str] = None,
 ) -> Tuple[int, Optional[str], Optional[str]]:
     """
     Persist all parsed question dicts from one PDF extract as one group.
 
-    1. Upserts a SubjectDocument for the detected subject.
+    1. Upserts a SubjectDocument for the detected subject (scoped to exam type).
     2. Creates an ExamPaperDocument (one per PDF).
-    3. Creates an ExamFileDocument with storage metadata linked to the paper.
+    3. Creates an ExamFileDocument with identity metadata linked to the paper.
     4. Bulk-inserts QuestionDocuments referencing the paper.
 
     Returns ``(count_inserted, paper_id_hex, paper_code)``.
@@ -283,16 +280,14 @@ async def persist_parsed_questions(
     subject_doc = await get_or_create_subject(raw_subject, exam_type_doc)
     paper_code = paper_code_override or await _get_next_code(subject_doc.id)
 
-    years_found: List[str] = sorted(
-        {str(q["year"]) for q in questions if q.get("year")}
+    years_found: List[int] = sorted(
+        {int(q["year"]) for q in questions if q.get("year")}
     )
-    primary_year = years_found[0] if years_found else None
 
     paper = ExamPaperDocument(
         subject_id=subject_doc.id,
         paper_code=paper_code,
         exam_type_id=exam_type_doc.id,
-        year=primary_year,
         years_detected=years_found,
         total_questions=len(questions),
     )
@@ -300,9 +295,7 @@ async def persist_parsed_questions(
 
     exam_file = ExamFileDocument(
         paper_id=paper.id,
-        source_original_filename=source_original_filename,
-        stored_filename=stored_filename,
-        relative_path=relative_path,
+        filename=filename,
         file_hash=file_hash,
         size_bytes=size_bytes,
         total_pages=source_total_pages,
@@ -322,7 +315,7 @@ async def persist_parsed_questions(
                 paper_id=paper.id,
                 subject_id=subject_doc.id,
                 exam_type_id=q_et.id,
-                year=q.get("year"),
+                year=int(q["year"]) if q.get("year") else None,
                 question_number=int(q["question_number"]),
                 question=q.get("question") or "",
                 question_latex=q.get("question_latex"),
@@ -349,7 +342,7 @@ async def _apply_subject_filter(
     if subject_id is not None:
         try:
             filters["subject_id"] = PydanticObjectId(subject_id)
-        except (ValueError, TypeError, InvalidId) as e:
+        except (ValueError, TypeError) as e:
             raise ValueError("Invalid subject_id") from e
     elif subject is not None:
         sid = await resolve_subject_id_by_name(subject)
@@ -368,13 +361,13 @@ def _apply_paper_id_filter(filters: dict, paper_id: Optional[str] = None) -> Non
 
     try:
         filters["paper_id"] = PydanticObjectId(paper_id)
-    except (ValueError, TypeError, InvalidId) as e:
+    except (ValueError, TypeError) as e:
         raise ValueError("Invalid paper_id") from e
 
 
 async def build_question_filters(
     *,
-    year: Optional[str] = None,
+    year: Optional[int] = None,
     subject: Optional[str] = None,
     exam_type: Optional[str] = None,
     question_number: Optional[int] = None,
@@ -396,7 +389,7 @@ async def build_question_filters(
         filters["question_number"] = question_number
 
     if search:
-        filters["question"] = {"$regex": re.escape(search), "$options": "i"}
+        filters["$text"] = {"$search": search}
 
     return filters
 
@@ -404,7 +397,7 @@ async def build_question_filters(
 async def build_paper_filters(
     *,
     subject: Optional[str] = None,
-    year: Optional[str] = None,
+    year: Optional[int] = None,
     exam_type: Optional[str] = None,
     subject_id: Optional[str] = None,
 ) -> dict:
@@ -415,6 +408,6 @@ async def build_paper_filters(
     await _apply_exam_type_filter(filters, exam_type)
 
     if year is not None:
-        filters["year"] = year
+        filters["years_detected"] = year
 
     return filters

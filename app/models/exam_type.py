@@ -22,11 +22,16 @@ class ExamTypeDocument(Document):
     One canonical exam body / exam type (e.g. JAMB, WAEC).
 
     ``code`` is the unique identifier, typically upper-case (e.g. ``JAMB``).
+    ``name`` is the full name of the exam type (e.g. 'Joint Admissions and Matriculation Board').
     """
 
     code: str = Field(
         ...,
-        description="Unique short code, e.g. 'JAMB', 'WAEC'",
+        description="Unique short code (e.g. 'JAMB', 'WAEC')",
+    )
+    name: str = Field(
+        ...,
+        description="Full name of the exam type, e.g. 'Joint Admissions and Matriculation Board'",
     )
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: Optional[datetime] = Field(None)
@@ -35,4 +40,5 @@ class ExamTypeDocument(Document):
         name = "exam_types"
         indexes = [
             IndexModel([("code", ASCENDING)], name="idx_code_unique", unique=True),
+            IndexModel([("name", ASCENDING)], name="idx_name_unique", unique=True),
         ]

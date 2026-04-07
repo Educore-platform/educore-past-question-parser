@@ -13,7 +13,7 @@ class QuestionUpdate(BaseModel):
     exam_type_id: Optional[str] = Field(None, description="ExamType document id")
     exam_type: Optional[str] = Field(None, alias="examType")
     subject_id: Optional[str] = Field(None, description="Subject document id")
-    year: Optional[str] = None
+    year: Optional[int] = None
     question_number: Optional[int] = None
     question: Optional[str] = None
     question_latex: Optional[str] = None
@@ -39,7 +39,7 @@ class QuestionOut(BaseModel):
     subject: str
     paper_code: Optional[str] = Field(None, description="Subject-scoped upload sequence, e.g. '001'")
     paper_name: Optional[str] = Field(None, description="Combination of subject and paper_code, e.g. 'Mathematics 001'")
-    year: Optional[str]
+    year: Optional[int] = None
     question_number: int
     question: str
     question_latex: Optional[str] = None
@@ -76,7 +76,7 @@ class QuestionSummaryOut(BaseModel):
     subject: str
     paper_code: Optional[str] = Field(None, description="Subject-scoped upload sequence, e.g. '001'")
     paper_name: Optional[str] = Field(None, description="Combination of subject and paper_code, e.g. 'Mathematics 001'")
-    year: Optional[str] = Field(None, description="Year of the exam")   
+    year: Optional[int] = Field(None, description="Year of the exam")
     question_number: int
     has_answer: bool = Field(..., description="Whether a correct option key was stored")
     has_image: bool = Field(..., description="Whether a diagram URL is attached")

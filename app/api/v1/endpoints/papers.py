@@ -35,7 +35,7 @@ _MAX_LIMIT = 200
 async def list_papers(
     subject: Annotated[Optional[str], Query()] = None,
     exam_type: Annotated[Optional[str], Query(alias="examType")] = None,
-    year: Annotated[Optional[str], Query()] = None,
+    year: Annotated[Optional[int], Query(description="Filter by year (integer, e.g. 2019)")] = None,
     subject_id: Annotated[Optional[str], Query()] = None,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=_MAX_LIMIT)] = 50,
