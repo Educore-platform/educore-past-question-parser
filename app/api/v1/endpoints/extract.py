@@ -1,17 +1,33 @@
+"""
+PDF extraction endpoint.
+
+POST /api/v1/extract/questions
+    Validates uploads, hashes bytes in memory, short-circuits duplicates
+    before any disk write, saves new files, creates a ``ProcessingJobDocument``
+    per file, enqueues ``run_extraction_job`` as a FastAPI BackgroundTask, and
+    returns a list of job IDs immediately.
+
+Clients poll GET /api/v1/jobs/{job_id} for status.  When status is "done"
+the job's ``result`` field contains the full extraction summary.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import hashlib
-from pathlib import Path
+import uuid
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 
-from app.core import cache
-from app.core.events import file_processed
-from app.extraction.core.pipeline import run_pipeline
+from app.models.processing_job import ProcessingJobDocument
 from app.schemas.api_response import ApiResponse, api_success
-from app.schemas.responses import ExtractQuestionsMultiUploadSummary, ExtractQuestionsUploadSummary
+from app.schemas.job import JobEnqueuedItem
+from app.schemas.responses import ExtractQuestionsJobSummary
 from app.services.file_service import FileService, get_file_service
-from app.services.question_service import find_import_summary_by_file_hash, persist_parsed_questions
+from app.services.job_service import run_extraction_job
+from app.services.question_service import find_import_summary_by_file_hash
 
 router = APIRouter(prefix="/extract", tags=["extract"])
 
@@ -19,12 +35,17 @@ MAX_PDF_FILES = 20
 MAX_TOTAL_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
-async def _read_upload(file: UploadFile) -> tuple[Optional[str], bytes]:
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+async def _read_upload(file: UploadFile) -> tuple[Optional[str], bytes, str]:
     data = await file.read()
-    return file.filename, data
+    file_hash = hashlib.sha256(data).hexdigest()
+    return file.filename, data, file_hash
 
 
-def _validate_multi_pdf_upload(chunks: list[tuple[Optional[str], bytes]]) -> int:
+def _validate_multi_pdf_upload(chunks: list[tuple[Optional[str], bytes, str]]) -> int:
     if not chunks:
         raise HTTPException(status_code=400, detail="At least one PDF file is required.")
     if len(chunks) > MAX_PDF_FILES:
@@ -33,7 +54,7 @@ def _validate_multi_pdf_upload(chunks: list[tuple[Optional[str], bytes]]) -> int
             detail=f"Maximum {MAX_PDF_FILES} PDF files allowed.",
         )
     total = 0
-    for name, data in chunks:
+    for name, data, _hash in chunks:
         if not name or not name.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Every upload must be a PDF file (.pdf).")
         if not data:
@@ -47,84 +68,21 @@ def _validate_multi_pdf_upload(chunks: list[tuple[Optional[str], bytes]]) -> int
     return total
 
 
-async def _process_saved_pdf(
-    meta: dict,
-    subject: Optional[str],
-    exam_type: Optional[str],
-) -> ExtractQuestionsUploadSummary:
-    path = Path(meta["absolute_path"])
-
-    # Compute the hash first so we can check for a duplicate before the
-    # expensive pipeline run.
-    file_bytes = await asyncio.to_thread(path.read_bytes)
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
-
-    existing = await find_import_summary_by_file_hash(file_hash)
-    if existing is not None:
-        return ExtractQuestionsUploadSummary(
-            filename=meta["original_filename"],
-            stored_filename=meta["stored_filename"],
-            total_pages=existing.total_pages,
-            years_detected=existing.years_detected,
-            total_questions=existing.total_questions,
-            persisted_count=0,
-            paper_id=existing.paper_id,
-            paper_code=existing.paper_code,
-            subject_name=existing.filename,
-        )
-
-    result = await asyncio.to_thread(
-        run_pipeline,
-        path,
-        subject_override=subject,
-        exam_type_override=exam_type,
-    )
-    years_found = sorted({int(q["year"]) for q in result.questions if q["year"]})
-
-    persisted, paper_id_str, paper_code_val = await persist_parsed_questions(
-        result.questions,
-        filename=meta["original_filename"],
-        file_hash=file_hash,
-        source_total_pages=result.total_pages,
-        size_bytes=meta["size_bytes"],
-    )
-    file_processed.send("extract_questions", path=str(path))
-
-    # Invalidate aggregate caches that are now stale after new questions were
-    # inserted.  Use delete_pattern for filters because the key includes the
-    # subject scope which we may not know exactly.
-    await cache.delete("question:stats")
-    await cache.delete_pattern("question:filters:*")
-
-    subject_name = (result.questions[0].get("subject") if result.questions else None) or "Unknown"
-
-    return ExtractQuestionsUploadSummary(
-        filename=meta["original_filename"],
-        stored_filename=meta["stored_filename"],
-        total_pages=result.total_pages,
-        years_detected=years_found,
-        total_questions=len(result.questions),
-        persisted_count=persisted,
-        paper_id=paper_id_str,
-        paper_code=paper_code_val,
-        subject_name=subject_name,
-    )
-
-
 @router.post(
     "/questions",
-    response_model=ApiResponse[ExtractQuestionsMultiUploadSummary],
-    summary="Upload and extract questions from PDFs",
+    response_model=ApiResponse[ExtractQuestionsJobSummary],
+    summary="Upload PDFs and queue extraction jobs",
     description=(
-        "Upload one or more PDFs (persisted on disk), parse JAMB-style MCQs, and **persist each question "
-        "to MongoDB**. One `ExamPaperDocument` and one `ExamFileDocument` are created per source file; "
-        "questions reference the paper via `paper_id`. "
-        "Up to **20 files** and **50MB total** per request. Files are read, saved, and parsed **in parallel** "
-        "where safe. Fetch stored questions with `GET /api/v1/questions` (e.g. `?paper_id=` or `?subject_id=`). "
-        "Diagram images are saved under `data/images/` and served at `/images/<filename>`."
+        "Upload one or more PDFs, validate them, and immediately return a list of job IDs. "
+        "Each file is processed asynchronously — clients poll "
+        "``GET /api/v1/jobs/{job_id}`` for status. "
+        "Duplicate files (same SHA-256) are detected **before** any disk write and "
+        "returned as ``status=duplicate`` with no new job created. "
+        "Up to **20 files** and **50 MB total** per request."
     ),
 )
 async def extract_questions(
+    background_tasks: BackgroundTasks,
     file_service: Annotated[FileService, Depends(get_file_service)],
     files: list[UploadFile] = File(
         ...,
@@ -139,12 +97,22 @@ async def extract_questions(
         alias="examType",
         description="Override automatic exam type detection (e.g. 'JAMB', 'WAEC') for every file.",
     ),
-):
+) -> ApiResponse[ExtractQuestionsJobSummary]:
     chunks = await asyncio.gather(*(_read_upload(f) for f in files))
     total_size_bytes = _validate_multi_pdf_upload(chunks)
 
-    async def _save_one(item: tuple[Optional[str], bytes]) -> dict:
-        name, data = item
+    # Hash-check all files concurrently before touching disk.
+    existing_results = await asyncio.gather(
+        *(find_import_summary_by_file_hash(fh) for _, _, fh in chunks)
+    )
+    existing_map: dict[str, object] = {
+        fh: ex
+        for (_, _, fh), ex in zip(chunks, existing_results)
+        if ex is not None
+    }
+
+    # Save only genuinely new files.
+    async def _save_one(name: Optional[str], data: bytes) -> dict:
         try:
             return await asyncio.to_thread(
                 file_service.save_pdf_bytes,
@@ -154,14 +122,47 @@ async def extract_questions(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
-    metas = await asyncio.gather(*[_save_one(c) for c in chunks])
+    new_chunks = [(name, data, fh) for name, data, fh in chunks if fh not in existing_map]
+    new_metas = await asyncio.gather(*[_save_one(name, data) for name, data, _ in new_chunks])
+    meta_by_hash = {fh: meta for (_, _, fh), meta in zip(new_chunks, new_metas)}
 
-    summaries = await asyncio.gather(*(_process_saved_pdf(m, subject, exam_type) for m in metas))
+    # Build job documents for new files and enqueue background tasks.
+    job_docs: list[ProcessingJobDocument] = []
+    for _, _, fh in new_chunks:
+        meta = meta_by_hash[fh]
+        job = ProcessingJobDocument(
+            job_id=str(uuid.uuid4()),
+            status="queued",
+            original_filename=meta["original_filename"],
+            stored_filename=meta["stored_filename"],
+            file_path=meta["absolute_path"],
+            file_hash=fh,
+            size_bytes=meta["size_bytes"],
+            subject_override=subject,
+            exam_type_override=exam_type,
+        )
+        job_docs.append(job)
+
+    if job_docs:
+        await asyncio.gather(*(j.insert() for j in job_docs))
+        for j in job_docs:
+            background_tasks.add_task(run_extraction_job, j.job_id)
+
+    job_by_hash = {j.file_hash: j for j in job_docs}
+
+    # Assemble the response: one item per uploaded file.
+    items: list[JobEnqueuedItem] = []
+    for name, _, fh in chunks:
+        if fh in existing_map:
+            items.append(JobEnqueuedItem(job_id="", filename=name or "", status="duplicate"))
+        else:
+            j = job_by_hash[fh]
+            items.append(JobEnqueuedItem(job_id=j.job_id, filename=name or "", status="queued"))
 
     return api_success(
-        ExtractQuestionsMultiUploadSummary(
-            results=list(summaries),
-            file_count=len(summaries),
+        ExtractQuestionsJobSummary(
+            jobs=items,
+            file_count=len(items),
             total_size_bytes=total_size_bytes,
-        ),
+        )
     )

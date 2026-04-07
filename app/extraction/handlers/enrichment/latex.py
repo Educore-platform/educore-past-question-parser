@@ -2,15 +2,19 @@
 LaTeX enrichment handler.
 
 Wraps ``build_latex_for_question`` and ``options_latex_for_persist`` from the
-existing ``latex_text.py`` utility module.  Gated by ``profile.has_formulas``.
+existing ``latex_text.py`` utility module.
 
-Adds ``question_latex`` and ``options_latex`` fields to every question dict.
+Input:  ``questions`` list of parsed question dicts.
+Output: ``QuestionExtractionOutput`` with ``question_latex`` and ``options_latex``
+        added in-place to every question dict.
+
+Gated by ``profile.has_formulas``.
 """
 
 from __future__ import annotations
 
-from app.extraction.core.context import ExtractionContext
 from app.extraction.core.profile import CapabilityProfile
+from app.extraction.core.stages import QuestionExtractionOutput
 from app.services.latex_text import build_latex_for_question, options_latex_for_persist
 
 
@@ -26,12 +30,15 @@ class LatexEnricherHandler:
     """
     Pipeline handler that attaches LaTeX representations to every parsed question.
 
+    Input:  ``questions`` list.
+    Output: ``QuestionExtractionOutput`` (same list, enriched in-place).
+
     Gated by ``profile.has_formulas``.
     """
 
     def can_handle(self, profile: CapabilityProfile) -> bool:
         return profile.has_formulas
 
-    def process(self, ctx: ExtractionContext) -> ExtractionContext:
-        attach_latex_fields(ctx.questions)
-        return ctx
+    def process(self, questions: list[dict]) -> QuestionExtractionOutput:
+        attach_latex_fields(questions)
+        return QuestionExtractionOutput(questions=questions)

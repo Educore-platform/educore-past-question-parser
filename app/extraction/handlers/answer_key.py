@@ -6,44 +6,57 @@ and splits it into per-year ``(year, question_text, answer_dict)`` sections usin
 the ``AnswerKeyResolverChain``.
 
 Always runs — every subject may have an answer section.
+
+Input:  ``pages`` list of ``{page, text}`` dicts, ``subject`` string,
+        ``pdf_path`` (for context construction only).
+Output: ``AnswerKeyOutput`` with ``year_sections`` and flat ``answer_key`` map.
 """
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from app.extraction.core.context import ExtractionContext
 from app.extraction.core.profile import CapabilityProfile
+from app.extraction.core.stages import AnswerKeyOutput
 from app.extraction.profiles.chains import ANSWER_CHAINS
 
 
 class AnswerKeyHandler:
     """
-    Populate ``ctx.year_sections`` and ``ctx.answer_key`` from the extracted pages.
+    Produce ``AnswerKeyOutput`` (``year_sections`` + ``answer_key``) from extracted pages.
     """
 
     def can_handle(self, profile: CapabilityProfile) -> bool:  # noqa: ARG002
         return True
 
-    def process(self, ctx: ExtractionContext) -> ExtractionContext:
-        chain = ANSWER_CHAINS.get(ctx.subject.lower(), ANSWER_CHAINS["__default__"])
-        result = chain.resolve(ctx)
+    def process(self, pages: list[dict], subject: str, pdf_path: Path) -> AnswerKeyOutput:
+        # Build a local resolver context carrying only the fields the
+        # AnswerKey resolver strategies access.
+        _ctx = ExtractionContext(pdf_path=pdf_path, doc=None, subject=subject)
+        _ctx.pages = pages
+
+        chain = ANSWER_CHAINS.get(subject.lower(), ANSWER_CHAINS["__default__"])
+        result = chain.resolve(_ctx)
 
         if result.value:
-            ctx.year_sections = result.value
+            year_sections = result.value
         else:
-            # Fallback: no parseable answer block — treat the entire text as one section
+            # Fallback: no parseable answer block — treat the entire text as one section.
             from app.extraction.resolvers.answers.answers_block import (
                 normalise_year_banners,
                 strip_noise,
             )
-            import re
 
-            raw = "\n".join(strip_noise(p["text"]) for p in ctx.pages)
+            raw = "\n".join(strip_noise(p["text"]) for p in pages)
             clean = re.sub(r"\n__YR__\d+\n", "\n", normalise_year_banners(raw))
-            ctx.year_sections = [(None, clean, {})]
+            year_sections = [(None, clean, {})]
 
-        # Build flat answer_key map for convenience
-        for year, _q_text, answers in ctx.year_sections:
+        # Build flat answer_key convenience map.
+        answer_key: dict[tuple, str] = {}
+        for year, _q_text, answers in year_sections:
             for q_num, letter in answers.items():
-                ctx.answer_key[(year, q_num)] = letter
+                answer_key[(year, q_num)] = letter
 
-        return ctx
+        return AnswerKeyOutput(year_sections=year_sections, answer_key=answer_key)

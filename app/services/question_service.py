@@ -261,15 +261,28 @@ async def persist_parsed_questions(
     """
     Persist all parsed question dicts from one PDF extract as one group.
 
-    1. Upserts a SubjectDocument for the detected subject (scoped to exam type).
-    2. Creates an ExamPaperDocument (one per PDF).
-    3. Creates an ExamFileDocument with identity metadata linked to the paper.
-    4. Bulk-inserts QuestionDocuments referencing the paper.
+    Idempotent on ``file_hash``: if an ``ExamFileDocument`` with the same
+    SHA-256 already exists (e.g. from a previous attempt that partially
+    succeeded), the function returns the existing paper info without
+    re-inserting anything.  This makes job retries safe.
+
+    1. Idempotency guard: check ``ExamFileDocument.file_hash``.
+    2. Upserts a SubjectDocument for the detected subject (scoped to exam type).
+    3. Creates an ExamPaperDocument (one per PDF).
+    4. Creates an ExamFileDocument with identity metadata linked to the paper.
+    5. Bulk-inserts QuestionDocuments referencing the paper.
 
     Returns ``(count_inserted, paper_id_hex, paper_code)``.
     """
     if not questions:
         return 0, None, None
+
+    # Idempotency guard: if this file was already persisted (e.g. the worker
+    # crashed after insert but before marking the job done), return existing data.
+    existing_file = await ExamFileDocument.find_one(ExamFileDocument.file_hash == file_hash)
+    if existing_file is not None:
+        paper = await ExamPaperDocument.get(existing_file.paper_id)
+        return 0, str(existing_file.paper_id), (paper.paper_code if paper else None)
 
     raw_subject = questions[0].get("subject") or "Unknown"
     raw_exam_type = questions[0].get("exam") or "JAMB"

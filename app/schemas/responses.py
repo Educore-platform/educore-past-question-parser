@@ -2,6 +2,8 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.job import JobEnqueuedItem
+
 
 class HealthResponse(BaseModel):
     message: str = Field(..., example="EduCore PDF Extractor is running")
@@ -69,6 +71,24 @@ class ExtractQuestionsMultiUploadSummary(BaseModel):
 
 
 ExtractQuestionsResponse = ExtractQuestionsUploadSummary
+
+
+class ExtractQuestionsJobSummary(BaseModel):
+    """
+    Response for POST /extract/questions (async mode).
+
+    Returned immediately after files are validated and queued.  Each item
+    carries a ``job_id`` that the client uses to poll
+    ``GET /api/v1/jobs/{job_id}`` for the final extraction result.
+
+    Duplicate files (already in the database) are returned with
+    ``status="duplicate"`` and no ``job_id`` — the ``result`` field on the
+    corresponding job response will reflect the existing import.
+    """
+
+    jobs: List[JobEnqueuedItem]
+    file_count: int = Field(..., description="Total number of files submitted")
+    total_size_bytes: int = Field(..., description="Combined size of all uploaded PDFs")
 
 
 class YearBreakdown(BaseModel):

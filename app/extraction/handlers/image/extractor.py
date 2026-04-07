@@ -23,8 +23,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from app.extraction.core.context import ExtractionContext
 from app.extraction.core.profile import CapabilityProfile
+from app.extraction.core.stages import ImageExtractionOutput
 
 _INSTR_RE = re.compile(
     r"[Uu]se\s+the\s+diagram\b[^.]*?"
@@ -297,7 +297,10 @@ def _extract_images(
 
 class ImageExtractorHandler:
     """
-    Pipeline handler that extracts diagram images and populates ``ctx.image_map``.
+    Pipeline handler that extracts diagram images.
+
+    Input:  ``doc`` (fitz.Document), ``pdf_path`` stem used for naming files.
+    Output: ``ImageExtractionOutput`` with an ``image_map`` dict.
 
     Gated by ``profile.has_images``.
     """
@@ -305,10 +308,9 @@ class ImageExtractorHandler:
     def can_handle(self, profile: CapabilityProfile) -> bool:
         return profile.has_images
 
-    def process(self, ctx: ExtractionContext) -> ExtractionContext:
+    def process(self, doc: object, pdf_path: Path) -> ImageExtractionOutput:
         from app.core.config import settings
 
         images_dir = settings.IMAGES_DIR
-        stem = ctx.pdf_path.stem
-        ctx.image_map = _extract_images(ctx.doc, stem, images_dir)
-        return ctx
+        image_map = _extract_images(doc, pdf_path.stem, images_dir)
+        return ImageExtractionOutput(image_map=image_map)

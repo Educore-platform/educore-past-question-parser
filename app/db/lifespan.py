@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.models.exam_file import ExamFileDocument
 from app.models.exam_paper import ExamPaperDocument
 from app.models.exam_type import ExamTypeDocument
+from app.models.processing_job import ProcessingJobDocument
 from app.models.question import QuestionDocument
 from app.models.subject import SubjectDocument
 
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
             ExamPaperDocument,
             ExamFileDocument,
             QuestionDocument,
+            ProcessingJobDocument,
         ],
     )
     await init_redis(settings.REDIS_URL)

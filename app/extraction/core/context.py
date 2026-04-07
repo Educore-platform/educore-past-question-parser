@@ -1,3 +1,22 @@
+"""
+Pipeline context definitions.
+
+``PipelineConfig``
+    Immutable configuration resolved *before* any handler runs: the open PDF
+    document, the detected subject, exam type, and capability profile.  Passed
+    into each handler as read-only inputs.
+
+``ExtractionContext``
+    Lean internal scratchpad used exclusively by ``ResolverChain`` strategies.
+    Handlers construct a local instance of this as needed and pass it to a chain;
+    it is never shared across handler boundaries.  It carries only the fields
+    that resolver strategies actually access.
+
+The previous design placed all intermediate handler outputs (``pages``,
+``image_map``, ``year_sections``, ``answer_key``, ``questions``) here as well.
+Those now live as typed ``*Output`` dataclasses in ``stages.py``.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,45 +28,55 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class ExtractionContext:
+class PipelineConfig:
     """
-    Shared state that flows through every stage of the pipeline.
+    Pre-handler configuration — resolved once and passed (read-only) to handlers.
 
-    Handlers only write to fields they own; downstream handlers read those fields.
-    Fields prefixed with ``_active_`` are temporary staging slots set by a handler
-    before it calls a resolver chain — they are not meaningful outside that call.
+    Handlers receive this alongside their typed inputs; they MUST NOT mutate it.
     """
 
-    # ── Required ────────────────────────────────────────────────────────────
     pdf_path: Path
     doc: Any  # fitz.Document — typed as Any to avoid a hard import at module level
-
-    # ── Optional override passed in via API ─────────────────────────────────
     subject_override: str | None = None
-
-    # ── Populated by SubjectResolverChain (before pipeline) ─────────────────
     subject: str = ""
     exam_type: str = "JAMB"
+    profile: "CapabilityProfile | None" = None
 
-    # ── Populated after subject detection ───────────────────────────────────
-    profile: CapabilityProfile | None = None
 
-    # ── Populated by TextExtractorHandler ───────────────────────────────────
-    pages: list[dict] = field(default_factory=list)  # [{page: int, text: str}, ...]
+@dataclass
+class ExtractionContext:
+    """
+    Internal resolver scratchpad.
 
-    # ── Populated by ImageExtractorHandler ──────────────────────────────────
-    image_map: dict = field(default_factory=dict)  # (year, q_num) -> "/images/..."
+    Created locally by individual handlers when they need to invoke a
+    ``ResolverChain``.  Never shared across handler boundaries.
 
-    # ── Populated by AnswerKeyHandler ────────────────────────────────────────
-    # year_sections: [(year, question_text, {q_num: answer_letter})]
-    year_sections: list[tuple[str | None, str, dict[int, str]]] = field(default_factory=list)
-    # Flat map: (year, q_num) -> answer_letter  (convenience for post-processing)
-    answer_key: dict[tuple[str | None, int], str] = field(default_factory=dict)
+    Fields mirror what resolver strategies expect via ``ctx.*`` attribute access:
 
-    # ── Populated by QuestionExtractorHandler ───────────────────────────────
-    questions: list[dict] = field(default_factory=list)
+    * ``pdf_path``, ``doc``, ``subject_override``, ``subject``, ``exam_type``
+      — copied from ``PipelineConfig`` when constructing a local instance.
+    * ``pages`` — text pages, used by ``AnswerKeyHandler``'s resolver chain.
+    * ``image_map`` — image map, used by ``QuestionExtractorHandler``'s resolver.
+    * ``_active_q_text``, ``_active_year``, ``_active_answers``
+      — temporary staging set by ``QuestionExtractorHandler`` before each
+        ``chain.resolve()`` call; cleared immediately after.
+    """
 
-    # ── Temporary state: set by QuestionExtractorHandler before calling chains
+    # ── Copied from PipelineConfig ───────────────────────────────────────────
+    pdf_path: Path
+    doc: Any  # fitz.Document or None
+    subject_override: str | None = None
+    subject: str = ""
+    exam_type: str = "JAMB"
+    profile: "CapabilityProfile | None" = None
+
+    # ── Set by AnswerKeyHandler before calling its resolver chain ────────────
+    pages: list[dict] = field(default_factory=list)
+
+    # ── Set by QuestionExtractorHandler before calling its resolver chain ────
+    image_map: dict = field(default_factory=dict)
+
+    # ── Temporary per-section staging (QuestionExtractorHandler only) ────────
     _active_q_text: str = ""
     _active_year: str | None = None
     _active_answers: dict[int, str] = field(default_factory=dict)
