@@ -18,7 +18,6 @@ original MongoDB-count approach so no upload is ever blocked.
 
 import asyncio
 import logging
-from typing import Optional
 
 from beanie import PydanticObjectId
 
