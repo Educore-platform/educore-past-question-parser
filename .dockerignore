@@ -1,0 +1,42 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.eggs
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE / Editor
+.idea
+.vscode
+*.swp
+*.swo
+
+# Local data (mount as volumes in production)
+data/uploads/*
+data/images/*
+!data/uploads/.gitkeep
+!data/images/.gitkeep
+
+# Docs / scripts
+README.md
+scripts/
+
+# Environment files (never bake secrets into the image)
+.env
+.env.*
+!.env.example
+
+# Misc
+.DS_Store
+*.log
