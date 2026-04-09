@@ -16,9 +16,9 @@ from app.models.subject import SubjectDocument
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.mongo_client = AsyncIOMotorClient(settings.MONGODB_URI)
+    app.state.mongo_client = AsyncIOMotorClient(settings.MONGO_URI)
     await init_beanie(
-        database=app.state.mongo_client[settings.MONGODB_DB],
+        database=app.state.mongo_client[settings.DB_NAME],
         document_models=[
             ExamTypeDocument,
             SubjectDocument,
