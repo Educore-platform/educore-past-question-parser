@@ -232,7 +232,6 @@ async def get_filter_values(
 
 @router.get(
     "/stats",
-    response_model=ApiResponse[QuestionStatsResponse],
     summary="Aggregate question counts",
     description="Total question count plus per-subject, per-exam-type, and per-year breakdowns.",
 )

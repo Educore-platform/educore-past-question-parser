@@ -49,12 +49,7 @@ RUN adduser -D -H -s /sbin/nologin appuser \
 
 USER appuser
 
-EXPOSE 8000
-
-# Override WEB_CONCURRENCY to run multiple uvicorn workers (default: 1).
-CMD ["sh", "-c", \
-     "uvicorn app.main:app \
-      --host 0.0.0.0 \
-      --port ${PORT:-8000} \
-      --workers ${WEB_CONCURRENCY:-1} \
-      --log-level ${LOG_LEVEL:-info}"]
+# Standard Uvicorn startup for production:
+# - --proxy-headers: trust X-Forwarded-* headers (essential for Railway/behind a LB)
+# - --forwarded-allow-ips='*': trust headers from any IP (safe in Railway's private network)
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1} --log-level ${LOG_LEVEL:-info} --proxy-headers --forwarded-allow-ips='*'"]

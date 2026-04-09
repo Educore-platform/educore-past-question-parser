@@ -8,7 +8,7 @@ from app.models.exam_file import ExamFileDocument
 from app.models.exam_paper import ExamPaperDocument
 from app.models.question import QuestionDocument
 from app.schemas.api_response import ApiResponse, api_success
-from app.schemas.paper import ExamPaperListResponse, ExamPaperOut, paper_to_out
+from app.schemas.paper import ExamPaperListResponse, ExamPaperOut, PaperYearSummary, paper_to_out
 from app.services.question_service import (
     build_paper_filters,
     map_exam_type_ids_to_codes,
@@ -90,12 +90,52 @@ async def get_paper(
     if doc is None:
         raise HTTPException(status_code=404, detail="Exam paper not found")
 
+    # Aggregate year stats
+    pipeline = [
+        {"$match": {"paper_id": oid}},
+        {
+            "$group": {
+                "_id": "$year",
+                "total_questions": {"$sum": 1},
+                "verified_count": {
+                    "$sum": {
+                        "$cond": [
+                            {"$and": [{"$ne": ["$answer", None]}, {"$ne": ["$answer", ""]}]},
+                            1,
+                            0,
+                        ]
+                    }
+                },
+                "flagged_count": {"$sum": {"$cond": ["$is_flagged", 1, 0]}},
+            }
+        },
+        {"$sort": {"_id": 1}},
+    ]
+    cursor = QuestionDocument.aggregate(pipeline)
+    year_stats = await cursor.to_list()
+
+    year_summary = [
+        PaperYearSummary(
+            year=s["_id"],
+            total_questions=s["total_questions"],
+            verified_count=s.get("verified_count", 0),
+            flagged_count=s.get("flagged_count", 0),
+        )
+        for s in year_stats
+    ]
+
     subj_m = await map_subject_ids_to_names([doc.subject_id])
     et_m = await map_exam_type_ids_to_codes([doc.exam_type_id])
     file_map = await map_paper_ids_to_exam_files([doc.id])
 
     return api_success(
-        paper_to_out(doc, subjects=subj_m, exam_types=et_m, exam_file=file_map.get(doc.id))
+        paper_to_out(
+            doc,
+            subjects=subj_m,
+            exam_types=et_m,
+            exam_file=file_map.get(doc.id),
+            year_summary=year_summary,
+        )
     )
 
 

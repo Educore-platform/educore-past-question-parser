@@ -76,6 +76,23 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+@app.get("/", tags=["system"], summary="Service info")
+def root():
+    """Basic health check and service info."""
+    return {
+        "success": True,
+        "message": "EduCore PDF Parser is running",
+        "docs": "/docs",
+        "openapi": "/openapi.json"
+    }
+
+
+@app.get("/health", tags=["system"], summary="Health check")
+def health():
+    """Railway health check endpoint."""
+    return root()
+
+
 register_exception_handlers(app)
 
 app.add_middleware(
@@ -91,29 +108,3 @@ app.include_router(api_router, prefix="/api/v1")
 # Serve extracted diagram images at /images/<filename>
 settings.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/images", StaticFiles(directory=str(settings.IMAGES_DIR)), name="images")
-
-
-@app.get(
-    "/",
-    response_model=ApiResponse[HealthResponse],
-    tags=["system"],
-    summary="Service info",
-)
-def root() -> ApiResponse[HealthResponse]:
-    return api_success(
-        HealthResponse(
-            message="EduCore PDF Parser is running",
-            docs="/docs",
-            openapi="/openapi.json",
-        ),
-    )
-
-
-@app.get(
-    "/health",
-    response_model=ApiResponse[HealthResponse],
-    tags=["system"],
-    summary="Health check",
-)
-def health() -> ApiResponse[HealthResponse]:
-    return root()

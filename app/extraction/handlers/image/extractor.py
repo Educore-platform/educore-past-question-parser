@@ -12,8 +12,9 @@ Supports two diagram formats:
 * **Vector drawings** (PDF path/drawing primitives) — rendered to PNG via
   ``page.get_pixmap(clip=…)`` when no raster images are present.
 
-Year detection supports both banner formats:
-* Standard: ``2010 JAMB BIOLOGY QUESTIONS``
+Year detection supports banner formats from
+``answers_block.normalise_year_banners``:
+* ``UTME 2010 ECONOMICS QUESTIONS`` / ``2010 JAMB BIOLOGY QUESTIONS``
 * Alternate: ``Mathematics 1983``, ``Biology 1990`` etc.
 """
 
@@ -25,6 +26,7 @@ from typing import Dict, List, Optional, Tuple
 
 from app.extraction.core.profile import CapabilityProfile
 from app.extraction.core.stages import ImageExtractionOutput
+from app.extraction.resolvers.answers.answers_block import _YR_BANNER_ALT_RE, _YR_BANNER_RE
 
 _INSTR_RE = re.compile(
     r"[Uu]se\s+the\s+diagram\b[^.]*?"
@@ -32,11 +34,6 @@ _INSTR_RE = re.compile(
     r"|the\s+question\s+that\s+follow)",
     re.IGNORECASE | re.DOTALL,
 )
-_YR_BANNER_RE = re.compile(
-    r"(\d{4})\s+JAMB\s+[A-Za-z]+\s+QUESTIONS",
-    re.IGNORECASE,
-)
-
 # Minimum diagram size (pixels) to avoid saving decorative lines/dividers.
 _MIN_DIAG_HEIGHT = 25
 _MIN_DIAG_WIDTH = 25
@@ -44,15 +41,13 @@ _MIN_DIAG_WIDTH = 25
 
 def _build_page_years(doc) -> Dict[int, Optional[str]]:
     """Return a ``{page_num: year_str}`` map using both banner formats."""
-    from app.extraction.resolvers.answers.answers_block import _YR_BANNER_ALT_RE
-
     page_year: Dict[int, Optional[str]] = {}
     last_year: Optional[str] = None
     for page_num in range(len(doc)):
         text = doc[page_num].get_text()
         yr_m = _YR_BANNER_RE.search(text)
         if yr_m:
-            last_year = yr_m.group(1)
+            last_year = yr_m.group(1) or yr_m.group(2)
         else:
             yr_m_alt = _YR_BANNER_ALT_RE.search(text)
             if yr_m_alt:

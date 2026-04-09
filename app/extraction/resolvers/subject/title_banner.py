@@ -14,7 +14,8 @@ from app.extraction.core.context import ExtractionContext
 from app.extraction.resolvers.subject.first_page_keyword import KNOWN_SUBJECTS
 
 _BANNER_RE = re.compile(
-    r"\d{4}\s+JAMB\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+QUESTIONS",
+    r"(?:UTME|JAMB)\s+(\d{4})\s+([A-Z]+(?:\s+[A-Z]+)?)\s+QUESTIONS|"
+    r"(\d{4})\s+(?:UTME|JAMB)\s+([A-Z]+(?:\s+[A-Z]+)?)\s+QUESTIONS",
     re.IGNORECASE,
 )
 
@@ -36,7 +37,11 @@ class TitleBannerStrategy(BaseResolverStrategy[str]):
         all_text = " ".join(ctx.doc[i].get_text() for i in range(len(ctx.doc)))
         m = _BANNER_RE.search(all_text)
         if m:
-            candidate = m.group(1).strip().title()
+            # Group 2 (UTME YYYY SUBJ) or Group 4 (YYYY UTME SUBJ)
+            subj_raw = m.group(2) or m.group(4)
+            if not subj_raw:
+                return None
+            candidate = subj_raw.strip().title()
             if candidate.upper() in _KNOWN_UPPER:
                 return candidate
         return None

@@ -18,16 +18,19 @@ class Settings:
 
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
+    # environment: production | development
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+
     # Comma-separated list of allowed CORS origins.
     # Defaults cover local development; override via ALLOWED_ORIGINS in production.
-    ALLOWED_ORIGINS: list[str] = [
-        o.strip()
-        for o in os.getenv(
-            "ALLOWED_ORIGINS",
-            "http://localhost:3000,http://127.0.0.1:3000",
-        ).split(",")
-        if o.strip()
-    ]
+    @property
+    def ALLOWED_ORIGINS(self) -> list[str]:
+        raw = os.getenv("ALLOWED_ORIGINS", "")
+        if not raw:
+            return ["http://localhost:3000", "http://127.0.0.1:3000"]
+        if raw == "*":
+            return ["*"]
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
     PAPER_CODE_BATCH_SIZE: int = 5
     PAPER_CODE_REFILL_THRESHOLD: float = 0.25

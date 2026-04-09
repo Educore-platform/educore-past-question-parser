@@ -56,7 +56,7 @@ def _parse_section(
             continue
         remaining = q_match.group(2)
 
-        first_opt = re.search(r"\n([A-Ea-e])[.) ]\s*\S", remaining)
+        first_opt = re.search(r"(?:\n|\s\s+)([A-Ea-e])[.) ]\s*\S", remaining)
         if not first_opt:
             continue
 
@@ -65,7 +65,7 @@ def _parse_section(
 
         options: dict[str, str] = {}
         for opt_m in re.finditer(
-            r"\n([A-Ea-e])[.) ]\s*(.*?)(?=\n[A-Ea-e][.) ]|\Z)",
+            r"(?:\n|\s\s+)([A-Ea-e])[.) ]\s*(.*?)(?=(?:\n|\s\s+)[A-Ea-e][.) ]|\Z)",
             options_raw,
             re.DOTALL,
         ):

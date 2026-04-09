@@ -8,6 +8,13 @@ from app.models.exam_file import ExamFileDocument
 from app.models.exam_paper import ExamPaperDocument
 
 
+class PaperYearSummary(BaseModel):
+    year: Optional[int] = None
+    total_questions: int
+    verified_count: int
+    flagged_count: int
+
+
 class ExamPaperOut(BaseModel):
     id: str = Field(..., description="MongoDB document id")
     subject_id: Optional[str] = None
@@ -22,6 +29,7 @@ class ExamPaperOut(BaseModel):
     filename: Optional[str] = Field(None, description="Original PDF filename at upload time")
     size_bytes: Optional[int] = None
     total_pages: int = 0
+    year_summary: Optional[List[PaperYearSummary]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -41,6 +49,7 @@ def paper_to_out(
     subjects: Optional[Dict[PydanticObjectId, str]] = None,
     exam_types: Optional[Dict[PydanticObjectId, str]] = None,
     exam_file: Optional[ExamFileDocument] = None,
+    year_summary: Optional[List[PaperYearSummary]] = None,
 ) -> ExamPaperOut:
     subject_name = ""
     if doc.subject_id and subjects is not None:
@@ -63,6 +72,7 @@ def paper_to_out(
         filename=exam_file.filename if exam_file else None,
         size_bytes=exam_file.size_bytes if exam_file else None,
         total_pages=exam_file.total_pages if exam_file else 0,
+        year_summary=year_summary,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
     )
