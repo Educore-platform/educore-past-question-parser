@@ -13,7 +13,7 @@ class Settings:
     UPLOAD_DIR: Path = PROJECT_ROOT / "data" / "uploads"
     IMAGES_DIR: Path = PROJECT_ROOT / "data" / "images"
 
-    MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+    MONGO_URL: str = os.getenv("MONGO_URL", "mongodb://localhost:27017")
     DB_NAME: str = os.getenv("DB_NAME", "educore")
 
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
