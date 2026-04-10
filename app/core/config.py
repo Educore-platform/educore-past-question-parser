@@ -27,7 +27,7 @@ class Settings:
     PAPER_CODE_REFILL_THRESHOLD: float = 0.25
 
     CLOUDINARY_URL: str = os.getenv("CLOUDINARY_URL", "")
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
     @property
     def IMAGES_DIR(self) -> Path:
