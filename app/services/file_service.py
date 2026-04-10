@@ -4,6 +4,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
+import cloudinary
+import cloudinary.uploader
+
 from fastapi import UploadFile
 
 from app.core.config import settings
@@ -27,7 +30,7 @@ class FileService(ABC):
         pass
 
     @abstractmethod
-    def save_image_bytes(self, content: bytes, public_id: Optional[str] = None) -> dict:
+    def save_image_bytes(self, filename: str, content: bytes, public_id: Optional[str] = None) -> dict:
         """
         Persists image bytes and returns metadata.
         Expected keys in dict: file_url, cloudinary_public_id (optional)
@@ -40,10 +43,6 @@ class FileService(ABC):
             raise ValueError("A PDF file (.pdf) is required")
         content = await file.read()
         return self.save_pdf_bytes(file.filename, content)
-
-
-import cloudinary
-import cloudinary.uploader
 
 
 class CloudinaryFileService(FileService):
@@ -76,7 +75,7 @@ class CloudinaryFileService(FileService):
             "size_bytes": len(content),
         }
 
-    def save_image_bytes(self, content: bytes, public_id: Optional[str] = None) -> dict:
+    def save_image_bytes(self, filename: str, content: bytes, public_id: Optional[str] = None) -> dict:
         if not content:
             raise ValueError("Empty file")
 
@@ -85,7 +84,7 @@ class CloudinaryFileService(FileService):
             content,
             resource_type="image",
             folder="educore/images",
-            public_id=public_id,
+            public_id=public_id or Path(filename).stem,
         )
 
         return {
