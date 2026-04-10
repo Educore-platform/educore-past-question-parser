@@ -49,9 +49,13 @@ class CloudinaryFileService(FileService):
     """Persists uploaded PDFs to Cloudinary."""
 
     def __init__(self) -> None:
-        if not settings.CLOUDINARY_URL:
-            raise ValueError("CLOUDINARY_URL is not configured")
-        cloudinary.config(from_url=settings.CLOUDINARY_URL)
+       if not settings.CLOUDINARY_API_KEY or not settings.CLOUDINARY_API_SECRET or not settings.CLOUDINARY_CLOUD_NAME:
+           raise ValueError("CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, and CLOUDINARY_CLOUD_NAME are required")
+       cloudinary.config(
+           cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+           api_key=settings.CLOUDINARY_API_KEY,
+           api_secret=settings.CLOUDINARY_API_SECRET,
+       )
 
     def save_pdf_bytes(self, original_filename: str, content: bytes, public_id: Optional[str] = None) -> dict:
         if not original_filename or not original_filename.lower().endswith(".pdf"):

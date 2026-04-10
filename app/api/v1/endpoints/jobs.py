@@ -41,7 +41,7 @@ async def get_job(job_id: str) -> ApiResponse[JobResponse]:
             job_id=job.job_id,
             status=job.status,
             original_filename=job.original_filename,
-            stored_filename=job.stored_filename,
+            stored_filename=job.cloudinary_public_id,
             file_hash=job.file_hash,
             result=job.result,
             error=job.error,

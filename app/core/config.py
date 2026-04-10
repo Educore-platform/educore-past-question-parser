@@ -21,12 +21,15 @@ class Settings:
     # environment: production | development
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
-    ALLOWED_ORIGINS: list[str] = os.getenv("ALLOWED_ORIGINS", "").split(",")
+    _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001")
+    ALLOWED_ORIGINS: list[str] = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
     PAPER_CODE_BATCH_SIZE: int = 5
     PAPER_CODE_REFILL_THRESHOLD: float = 0.25
 
-    CLOUDINARY_URL: str = os.getenv("CLOUDINARY_URL", "")
+    CLOUDINARY_API_KEY: str = os.getenv("CLOUDINARY_API_KEY", "")
+    CLOUDINARY_API_SECRET: str = os.getenv("CLOUDINARY_API_SECRET", "")
+    CLOUDINARY_CLOUD_NAME: str = os.getenv("CLOUDINARY_CLOUD_NAME", "")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
 
