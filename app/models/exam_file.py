@@ -41,6 +41,14 @@ class ExamFileDocument(Document):
         ...,
         description="Lowercase hex SHA-256 of the PDF bytes; idempotency key",
     )
+    file_url: Optional[str] = Field(
+        None,
+        description="Cloudinary or local URL to the persisted file",
+    )
+    cloudinary_public_id: Optional[str] = Field(
+        None,
+        description="Predictable ID used as the Cloudinary asset name",
+    )
     size_bytes: int = Field(
         ...,
         ge=0,
@@ -63,5 +71,6 @@ class ExamFileDocument(Document):
                 unique=True,
             ),
             IndexModel([("paper_id", ASCENDING)], name="idx_paper_id"),
+            IndexModel([("cloudinary_public_id", ASCENDING)], name="idx_cloudinary_public_id"),
             IndexModel([("created_at", DESCENDING)], name="idx_created_desc"),
         ]

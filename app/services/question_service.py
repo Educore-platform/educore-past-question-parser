@@ -256,6 +256,8 @@ async def persist_parsed_questions(
     file_hash: str,
     source_total_pages: int,
     size_bytes: int,
+        file_url: Optional[str] = None,
+        cloudinary_public_id: Optional[str] = None,
     paper_code_override: Optional[str] = None,
 ) -> Tuple[int, Optional[str], Optional[str]]:
     """
@@ -310,6 +312,8 @@ async def persist_parsed_questions(
         paper_id=paper.id,
         filename=filename,
         file_hash=file_hash,
+        file_url=file_url,
+        cloudinary_public_id=cloudinary_public_id,
         size_bytes=size_bytes,
         total_pages=source_total_pages,
     )

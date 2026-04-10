@@ -38,8 +38,8 @@ class ProcessingJobDocument(Document):
         description="One of: queued, processing, done, failed",
     )
     original_filename: str = Field(..., description="Client-provided filename")
-    stored_filename: Optional[str] = Field(None, description="Server-side filename under data/uploads/")
-    file_path: Optional[str] = Field(None, description="Absolute path on disk (set after save)")
+    file_url: str = Field(..., description="Publicly accessible URL (Cloudinary or local path)")
+    cloudinary_public_id: Optional[str] = Field(None, description="Cloudinary asset identifier")
     file_hash: str = Field(..., description="SHA-256 hex of the PDF bytes; idempotency key")
     size_bytes: int = Field(0, ge=0, description="PDF size in bytes")
     subject_override: Optional[str] = Field(None)

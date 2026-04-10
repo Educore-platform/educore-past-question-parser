@@ -114,10 +114,13 @@ async def extract_questions(
     # Save only genuinely new files.
     async def _save_one(name: Optional[str], data: bytes) -> dict:
         try:
+            # Generate a deterministic ID for Cloudinary that we can link back to our DB
+            file_id = str(uuid.uuid4())
             return await asyncio.to_thread(
                 file_service.save_pdf_bytes,
                 name or "document.pdf",
                 data,
+                public_id=file_id,
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -134,8 +137,8 @@ async def extract_questions(
             job_id=str(uuid.uuid4()),
             status="queued",
             original_filename=meta["original_filename"],
-            stored_filename=meta["stored_filename"],
-            file_path=meta["absolute_path"],
+            file_url=meta["file_url"],
+            cloudinary_public_id=meta.get("cloudinary_public_id"),
             file_hash=fh,
             size_bytes=meta["size_bytes"],
             subject_override=subject,

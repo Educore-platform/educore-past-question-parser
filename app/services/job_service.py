@@ -16,16 +16,19 @@ matches the ``ExtractQuestionsUploadSummary`` schema so the polling endpoint
 can return a complete summary.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
+import os
+import tempfile
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
+
+import aiofiles
+import httpx
 
 from app.core import cache
-from app.core.events import file_processed
 from app.extraction.core.pipeline import run_pipeline
 from app.models.processing_job import ProcessingJobDocument
 from app.services.question_service import persist_parsed_questions
@@ -55,8 +58,27 @@ async def run_extraction_job(job_id: str) -> None:
     await job.save()
     logger.info("job_worker | started | job_id=%s file=%s", job_id, job.original_filename)
 
+    temp_path: Optional[Path] = None
     try:
-        pdf_path = Path(job.file_path)
+        # Remote URL, download to temp file
+        logger.info("job_worker | downloading | url=%s", job.file_url)
+
+        # Use a stable temp path but write to it asynchronously
+        fd, path_str = tempfile.mkstemp(suffix=".pdf")
+        os.close(fd)  # Close the sync file descriptor
+        temp_path = Path(path_str)
+
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", job.file_url) as response:
+                response.raise_for_status()
+                async with aiofiles.open(temp_path, mode="wb") as f:
+                    async for chunk in response.aiter_bytes():
+                        await f.write(chunk)
+
+        pdf_path = temp_path
+
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF file not found at {pdf_path}")
 
         result = await asyncio.to_thread(
             run_pipeline,
@@ -73,9 +95,14 @@ async def run_extraction_job(job_id: str) -> None:
             file_hash=job.file_hash,
             source_total_pages=result.total_pages,
             size_bytes=job.size_bytes,
+            file_url=job.file_url,
+            cloudinary_public_id=job.cloudinary_public_id,
         )
 
-        file_processed.send("job_worker", path=str(pdf_path))
+        # Cleanup: Delete the temp file.
+        if temp_path and temp_path.exists():
+            os.unlink(temp_path)
+            logger.info("job_worker | temp file deleted | path=%s", temp_path)
 
         await cache.delete("question:stats")
         await cache.delete_pattern("question:filters:*")
@@ -87,7 +114,6 @@ async def run_extraction_job(job_id: str) -> None:
         job.status = "done"
         job.result = {
             "filename": job.original_filename,
-            "stored_filename": job.stored_filename,
             "total_pages": result.total_pages,
             "years_detected": years_found,
             "total_questions": len(result.questions),
@@ -95,6 +121,7 @@ async def run_extraction_job(job_id: str) -> None:
             "paper_id": paper_id_str,
             "paper_code": paper_code_val,
             "subject_name": subject_name,
+            "file_url": job.file_url,
         }
         job.updated_at = _utcnow()
         await job.save()
@@ -107,6 +134,8 @@ async def run_extraction_job(job_id: str) -> None:
         )
 
     except Exception:
+        if temp_path and temp_path.exists():
+            os.unlink(temp_path)
         error_detail = traceback.format_exc()
         logger.error(
             "job_worker | failed | job_id=%s\n%s",

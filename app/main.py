@@ -1,14 +1,24 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
-import app.core.events as _events  # noqa: F401 — registers signal handlers on import
 from app.core.config import settings
 from app.core.exception_handlers import register_exception_handlers
 from app.db.lifespan import lifespan
-from app.schemas.api_response import ApiResponse, api_success
-from app.schemas.responses import HealthResponse
+
+# Simple logging setup
+logging.basicConfig(
+    level=settings.LOG_LEVEL,
+    format="%(levelname)s: %(message)s",
+    force=True
+)
+
+# Silence chatty third-party loggers
+logging.getLogger("pymongo").setLevel(logging.WARNING)
+logging.getLogger("motor").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 OPENAPI_TAGS = [
     {
@@ -65,7 +75,7 @@ app = FastAPI(
     description=(
         "REST API for extracting and structuring past questions from JAMB/WAEC-style PDFs. "
         "Use **Swagger UI** at `/docs` to try multipart uploads interactively. "
-        "Uploaded PDFs are saved under `data/uploads/` on the server; structured questions "
+        "Uploaded PDFs are saved to **Cloudinary**; structured questions "
         "are stored in **MongoDB** (configure `MONGODB_URI` / `MONGODB_DB`)."
     ),
     version="1.0.0",
@@ -104,7 +114,3 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
-
-# Serve extracted diagram images at /images/<filename>
-settings.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/images", StaticFiles(directory=str(settings.IMAGES_DIR)), name="images")

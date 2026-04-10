@@ -1,6 +1,10 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
@@ -8,10 +12,6 @@ def _project_root() -> Path:
 
 class Settings:
     """Application configuration (paths resolved from project root)."""
-
-    PROJECT_ROOT: Path = _project_root()
-    UPLOAD_DIR: Path = PROJECT_ROOT / "data" / "uploads"
-    IMAGES_DIR: Path = PROJECT_ROOT / "data" / "images"
 
     MONGO_URL: str = os.getenv("MONGO_URL", "mongodb://localhost:27017")
     DB_NAME: str = os.getenv("DB_NAME", "educore")
@@ -21,19 +21,18 @@ class Settings:
     # environment: production | development
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
-    # Comma-separated list of allowed CORS origins.
-    # Defaults cover local development; override via ALLOWED_ORIGINS in production.
-    @property
-    def ALLOWED_ORIGINS(self) -> list[str]:
-        raw = os.getenv("ALLOWED_ORIGINS", "")
-        if not raw:
-            return ["http://localhost:3000", "http://127.0.0.1:3000"]
-        if raw == "*":
-            return ["*"]
-        return [o.strip() for o in raw.split(",") if o.strip()]
+    ALLOWED_ORIGINS: list[str] = os.getenv("ALLOWED_ORIGINS", "").split(",")
 
     PAPER_CODE_BATCH_SIZE: int = 5
     PAPER_CODE_REFILL_THRESHOLD: float = 0.25
 
+    CLOUDINARY_URL: str = os.getenv("CLOUDINARY_URL", "")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+    @property
+    def IMAGES_DIR(self) -> Path:
+        p = _project_root() / "data" / "images"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
 
 settings = Settings()

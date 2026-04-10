@@ -1,5 +1,6 @@
 import re
 import uuid
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
@@ -14,49 +15,58 @@ def _sanitize_filename(name: str) -> str:
     return base or "document.pdf"
 
 
-class FileService:
-    """Persists uploaded PDFs under the project data directory."""
+class FileService(ABC):
+    """Abstract interface for PDF storage services."""
 
-    def __init__(self, upload_dir: Optional[Path] = None) -> None:
-        self.upload_dir = Path(upload_dir or settings.UPLOAD_DIR)
-        self.upload_dir.mkdir(parents=True, exist_ok=True)
+    @abstractmethod
+    def save_pdf_bytes(self, original_filename: str, content: bytes, public_id: Optional[str] = None) -> dict:
+        """
+        Persists PDF bytes and returns metadata.
+        Expected keys in dict: original_filename, size_bytes, file_url, cloudinary_public_id (optional)
+        """
+        pass
 
-    def resolve_stored_path(self, stored_name: str) -> Path:
-        path = (self.upload_dir / stored_name).resolve()
-        if not str(path).startswith(str(self.upload_dir.resolve())):
-            raise ValueError("Invalid path")
-        return path
+    async def save_pdf(self, file: UploadFile) -> dict:
+        """Helper to read UploadFile and call save_pdf_bytes."""
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            raise ValueError("A PDF file (.pdf) is required")
+        content = await file.read()
+        return self.save_pdf_bytes(file.filename, content)
 
-    def save_pdf_bytes(self, original_filename: str, content: bytes) -> dict:
-        """Write validated PDF bytes to disk (same metadata shape as ``save_pdf``)."""
+
+import cloudinary
+import cloudinary.uploader
+
+
+class CloudinaryFileService(FileService):
+    """Persists uploaded PDFs to Cloudinary."""
+
+    def __init__(self) -> None:
+        if not settings.CLOUDINARY_URL:
+            raise ValueError("CLOUDINARY_URL is not configured")
+        cloudinary.config(from_url=settings.CLOUDINARY_URL)
+
+    def save_pdf_bytes(self, original_filename: str, content: bytes, public_id: Optional[str] = None) -> dict:
         if not original_filename or not original_filename.lower().endswith(".pdf"):
             raise ValueError("A PDF file (.pdf) is required")
         if not content:
             raise ValueError("Empty file")
 
-        safe = _sanitize_filename(original_filename)
-        stored_name = f"{uuid.uuid4().hex[:12]}_{safe}"
-        dest = self.upload_dir / stored_name
-        dest.write_bytes(content)
+        # Use the folder 'educore/uploads' by default
+        # If public_id is provided, Cloudinary uses it exactly.
+        upload_result = cloudinary.uploader.upload(
+            content,
+            resource_type="raw",
+            folder="educore/uploads",
+            public_id=public_id or f"{uuid.uuid4().hex[:8]}_{_sanitize_filename(original_filename)}",
+        )
 
-        rel = dest.relative_to(settings.PROJECT_ROOT)
         return {
-            "stored_filename": stored_name,
             "original_filename": original_filename,
-            "absolute_path": str(dest),
-            "relative_path": str(rel).replace("\\", "/"),
+            "file_url": upload_result.get("secure_url"),
+            "cloudinary_public_id": upload_result.get("public_id"),
             "size_bytes": len(content),
         }
-
-    async def save_pdf(self, file: UploadFile) -> dict:
-        """
-        Save an uploaded PDF to disk. Returns metadata including the stored filename
-        (unique prefix + sanitized original name).
-        """
-        if not file.filename or not file.filename.lower().endswith(".pdf"):
-            raise ValueError("A PDF file (.pdf) is required")
-        content = await file.read()
-        return self.save_pdf_bytes(file.filename, content)
 
 
 _file_service: Optional[FileService] = None
@@ -65,5 +75,5 @@ _file_service: Optional[FileService] = None
 def get_file_service() -> FileService:
     global _file_service
     if _file_service is None:
-        _file_service = FileService()
+        _file_service = CloudinaryFileService()
     return _file_service

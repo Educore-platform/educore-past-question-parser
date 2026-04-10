@@ -11,6 +11,7 @@ class ExamFileOut(BaseModel):
     paper_id: str = Field(..., description="Parent ExamPaper document id")
     filename: str = Field(..., description="Client-provided filename at upload time")
     file_hash: str = Field(..., description="SHA-256 hex of the PDF bytes")
+    file_url: Optional[str] = Field(None, description="Publicly accessible URL")
     size_bytes: int
     total_pages: int
     created_at: datetime
@@ -30,6 +31,7 @@ def file_to_out(doc: ExamFileDocument) -> ExamFileOut:
         paper_id=str(doc.paper_id),
         filename=doc.filename,
         file_hash=doc.file_hash,
+        file_url=doc.file_url,
         size_bytes=doc.size_bytes,
         total_pages=doc.total_pages,
         created_at=doc.created_at,
