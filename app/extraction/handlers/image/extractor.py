@@ -22,11 +22,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.services.file_service import FileService
 
 from app.extraction.core.profile import CapabilityProfile
 from app.extraction.core.stages import ImageExtractionOutput
 from app.extraction.resolvers.answers.answers_block import _YR_BANNER_ALT_RE, _YR_BANNER_RE
+from app.services.file_service import get_file_service
+
 
 _INSTR_RE = re.compile(
     r"[Uu]se\s+the\s+diagram\b[^.]*?"
@@ -80,7 +84,7 @@ def _cluster_rects(rects: list, gap: float = 15.0) -> List[List[float]]:
 def _extract_vector_images(
     doc,
     stem: str,
-    images_dir: Path,
+    file_service: FileService,
     page_year: Dict[int, Optional[str]],
 ) -> Dict[Tuple[Optional[str], int], str]:
     """
@@ -179,8 +183,8 @@ def _extract_vector_images(
                 mat = _fitz.Matrix(2, 2)
                 pix = page.get_pixmap(matrix=mat, clip=clip)
                 fname = f"{stem}_p{page_num + 1}_vec_{col_side}_{qnum}.png"
-                (images_dir / fname).write_bytes(pix.tobytes("png"))
-                q_to_image[key] = f"/images/{fname}"
+                meta = file_service.save_image_bytes(fname, pix.tobytes("png"))
+                q_to_image[key] = meta["file_url"]
 
     return q_to_image
 
@@ -188,7 +192,7 @@ def _extract_vector_images(
 def _extract_images(
     doc,  # fitz.Document
     stem: str,
-    images_dir: Path,
+    file_service: FileService,
 ) -> Dict[Tuple[Optional[str], int], str]:
     """
     Core image-extraction logic operating on an already-open ``fitz.Document``.
@@ -204,8 +208,6 @@ def _extract_images(
     Pass 4 — if no raster images were found, fall back to vector-drawing
               extraction via ``_extract_vector_images()``.
     """
-    images_dir.mkdir(parents=True, exist_ok=True)
-
     # Pass 1: year labels per page (supports both banner formats)
     page_year = _build_page_years(doc)
 
@@ -227,8 +229,8 @@ def _extract_images(
             if ext not in ("png", "jpeg", "jpg", "jpx", "jp2", "gif", "bmp", "tiff"):
                 ext = "png"
             fname = f"{stem}_p{page_num + 1}_{seq}.{ext}"
-            (images_dir / fname).write_bytes(raw_bytes)
-            imgs.append((y0, f"/images/{fname}"))
+            meta = file_service.save_image_bytes(fname, raw_bytes)
+            imgs.append((y0, meta["file_url"]))
             seq += 1
         page_images[page_num] = sorted(imgs, key=lambda t: t[0])
 
@@ -284,7 +286,7 @@ def _extract_images(
 
     # Pass 4: vector-drawing fallback when no raster images exist
     if not any(page_images.values()):
-        vector_map = _extract_vector_images(doc, stem, images_dir, page_year)
+        vector_map = _extract_vector_images(doc, stem, file_service, page_year)
         q_to_image.update(vector_map)
 
     return q_to_image
@@ -304,8 +306,7 @@ class ImageExtractorHandler:
         return profile.has_images
 
     def process(self, doc: object, pdf_path: Path) -> ImageExtractionOutput:
-        from app.core.config import settings
 
-        images_dir = settings.IMAGES_DIR
-        image_map = _extract_images(doc, pdf_path.stem, images_dir)
+        file_service = get_file_service()
+        image_map = _extract_images(doc, pdf_path.stem, file_service)
         return ImageExtractionOutput(image_map=image_map)

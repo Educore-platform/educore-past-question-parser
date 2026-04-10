@@ -26,6 +26,14 @@ class FileService(ABC):
         """
         pass
 
+    @abstractmethod
+    def save_image_bytes(self, content: bytes, public_id: Optional[str] = None) -> dict:
+        """
+        Persists image bytes and returns metadata.
+        Expected keys in dict: file_url, cloudinary_public_id (optional)
+        """
+        pass
+
     async def save_pdf(self, file: UploadFile) -> dict:
         """Helper to read UploadFile and call save_pdf_bytes."""
         if not file.filename or not file.filename.lower().endswith(".pdf"):
@@ -66,6 +74,23 @@ class CloudinaryFileService(FileService):
             "file_url": upload_result.get("secure_url"),
             "cloudinary_public_id": upload_result.get("public_id"),
             "size_bytes": len(content),
+        }
+
+    def save_image_bytes(self, content: bytes, public_id: Optional[str] = None) -> dict:
+        if not content:
+            raise ValueError("Empty file")
+
+        # Use the folder 'educore/images' for extracted question diagrams
+        upload_result = cloudinary.uploader.upload(
+            content,
+            resource_type="image",
+            folder="educore/images",
+            public_id=public_id,
+        )
+
+        return {
+            "file_url": upload_result.get("secure_url"),
+            "cloudinary_public_id": upload_result.get("public_id"),
         }
 
 

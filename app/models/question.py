@@ -66,7 +66,7 @@ class QuestionDocument(Document):
     flag_comment: Optional[str] = Field(None, description="Optional comment when flagged")
     image_url: Optional[str] = Field(
         None,
-        description="Relative URL of the diagram image for this question",
+        description="Cloudinary HTTPS URL of the diagram image for this question",
     )
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: Optional[datetime] = Field(None)

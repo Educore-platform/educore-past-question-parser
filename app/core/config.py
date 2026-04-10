@@ -29,10 +29,5 @@ class Settings:
     CLOUDINARY_URL: str = os.getenv("CLOUDINARY_URL", "")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
-    @property
-    def IMAGES_DIR(self) -> Path:
-        p = _project_root() / "data" / "images"
-        p.mkdir(parents=True, exist_ok=True)
-        return p
 
 settings = Settings()
