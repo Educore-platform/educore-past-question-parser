@@ -40,6 +40,8 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import fitz  # PyMuPDF — import deferred so the module loads without fitz installed
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,7 +69,7 @@ from app.extraction.handlers.special.logarithm import LogarithmHandler
 
 # ── Profile / chain imports ──────────────────────────────────────────────────
 
-from app.extraction.core.context import ExtractionContext, PipelineConfig
+from app.extraction.core.context import ExtractionContext
 from app.extraction.core.profile import CapabilityProfile
 from app.extraction.profiles.capabilities import PROFILES
 from app.extraction.profiles.chains import SUBJECT_CHAINS
@@ -112,7 +114,6 @@ def run_pipeline(
         Contains ``questions`` (list of parsed question dicts), ``total_pages``,
         and the resolved ``subject`` string.
     """
-    import fitz  # PyMuPDF — import deferred so the module loads without fitz installed
 
     doc = fitz.open(str(pdf_path))
     try:
